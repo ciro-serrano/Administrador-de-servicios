@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "name": "Corte de cabello",
+    "description": "Corte clásico con lavado y peinado incluido.",
+    "duration": 30,
+    "price": 8000,
+    "category": "Peluqueria",
+    "available": true
+  },
+  {
+    "id": 2,
+    "name": "Coloracion completa",
+    "description": "Aplicacion de color en todo el cabello con tratamiento post-color.",
+    "duration": 90,
+    "price": 25000,
+    "category": "Peluqueria",
+    "available": true
+  },
+  {
+    "id": 3,
+    "name": "Masaje descontracturante",
+    "description": "Sesion de masaje focalizado en espalda, cuello y hombros.",
+    "duration": 60,
+    "price": 18000,
+    "category": "Spa",
+    "available": false
+  }
+]

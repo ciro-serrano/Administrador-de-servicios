@@ -7,7 +7,7 @@ Yo me base en el tipo de negocio de peluqueria ya que se suele manejar reservas 
 
 ```bash
 git clone https://github.com/ciro-serrano/Administrador-de-servicios.git
-cd administrador-de-servicios-CLASE-1
+cd Administrador-de-servicios
 npm install
 cp .env.example .env
 ```

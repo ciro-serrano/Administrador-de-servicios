@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
+import { type } from "node:os";
 
 class ServiceManager {
   constructor() {
@@ -10,9 +11,23 @@ class ServiceManager {
     this.servicesPath = path.join(__dirname, "..", "data", "services.json");
   }
   //get --GET
-  async getServices() {
+  async getServices(filters = {}) {
+    const { category, available } = filters;
     const data = await readFile(this.servicesPath, "utf-8");
-    return JSON.parse(data);
+    let result = JSON.parse(data);
+
+    if (category) {
+      result = result.filter(
+        (s) => s.category.toLowerCase() === category.toLowerCase(),
+      );
+    }
+    if (available !== undefined) {
+      if (available !== "true" && available !== "false") {
+        throw new Error("ERROR: available solamente debe ser true o false");
+      }
+      result = result.filter((s) => s.available === (available === "true"));
+    }
+    return result;
   }
   //getId --GETid
   async getServiceById(id) {
@@ -31,14 +46,20 @@ class ServiceManager {
       "category",
       "available",
     ];
-
+    if (
+      typeof serviceData !== "object" ||
+      serviceData === null ||
+      Array.isArray(serviceData)
+    ) {
+      throw new Error(`El body debe ser un objeto con los datos del servicio`);
+    }
     const faltantes = camposRequeridos.filter((campo) => {
       return serviceData[campo] === undefined;
     });
 
     if (faltantes.length > 0) {
       throw new Error(
-        `Error: Falta agregar campos\nFaltantes: ${faltantes.join(", ")}`,
+        `Error: Falta agregar campos. --- Faltantes: ${faltantes.join(", ")}`,
       );
     }
     //generar id
@@ -101,6 +122,7 @@ class ServiceManager {
     );
     return elementDelete[0];
   }
+  async filterService() {}
 }
 
 const manager = new ServiceManager();

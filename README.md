@@ -1,10 +1,12 @@
-# Administrador de servicios
+# Sistema de turnos y reservas
 
-API REST construida con **Node.js y Express** para gestionar los servicios de un sistema de turnos y reservas: nombre, descripción, duración, precio, categoría y disponibilidad.
+API REST construida con **Node.js, Express y FileSystem** para gestionar los servicios y las reservas de un sistema de turnos: qué servicios se ofrecen (nombre, descripción, duración, precio, categoría y disponibilidad) y qué reservas hicieron los clientes sobre esos servicios.
 
 El objetivo es optimizar la gestión de reservas y evitar los conflictos que genera una mala organización. Me basé en el rubro de peluquería, donde las reservas son muy frecuentes y una mala gestión puede causar inconsistencias entre el personal y el cliente.
 
-Es una API que se consume por HTTP (en este caso yo trabaje con Postman), no un programa que se ejecuta en consola.
+Es una API que se consume por HTTP (en este caso yo trabajé con Postman), no un programa que se ejecuta en consola.
+
+La información se guarda en archivos JSON, así que **los datos no se pierden al reiniciar el servidor**.
 
 ---
 
@@ -13,6 +15,7 @@ Es una API que se consume por HTTP (en este caso yo trabaje con Postman), no un 
 - Node.js (ESM, `"type": "module"`)
 - Express
 - dotenv
+- FileSystem (`node:fs/promises`) para la persistencia en archivos JSON
 
 ---
 
@@ -24,10 +27,13 @@ src/
     env.config.js          # Carga y valida las variables de entorno
   managers/
     ServiceManager.js      # Lógica de los servicios (lectura, alta, edición, baja y filtros)
+    BookingManager.js      # Lógica de las reservas (alta, consulta y agregado de servicios)
   routes/
     services.router.js     # Endpoints del recurso services (express.Router)
+    bookings.router.js     # Endpoints del recurso bookings (express.Router)
   data/
     services.json          # Persistencia de los servicios
+    bookings.json          # Persistencia de las reservas
   app.js                   # Configura la app de Express (middlewares y rutas)
   server.js                # Pone la app a escuchar en el puerto
 package.json
@@ -36,7 +42,7 @@ package.json
 README.md
 ```
 
-La lógica de los servicios vive en `ServiceManager`. El router solo recibe la petición, llama al manager y responde con el código de estado correspondiente.
+La lógica vive en los managers. Los routers solo reciben la petición, llaman al manager correspondiente y responden con el código de estado que corresponde. `BookingManager` usa a `ServiceManager` para comprobar que un servicio exista antes de agregarlo a una reserva.
 
 ---
 
@@ -76,7 +82,7 @@ Se levanta un servidor que queda escuchando en el puerto indicado en el `.env`. 
 http://localhost:8080
 ```
 
-La base de todos los endpoints es `/api/services`.
+Las bases de los endpoints son `/api/services` y `/api/bookings`.
 
 ---
 
@@ -108,7 +114,45 @@ El `id` **no se envía en el body** del `POST` y **no se puede modificar** con e
 
 ---
 
-## Endpoints
+## El recurso `bookings`
+
+```json
+{
+  "id": 1,
+  "clientName": "Ana Pérez",
+  "clientEmail": "ana@mail.com",
+  "date": "2026-11-10",
+  "time": "15:30",
+  "status": "pending",
+  "services": [
+    { "service": 2, "quantity": 2 },
+    { "service": 1, "quantity": 1 }
+  ]
+}
+```
+
+| Campo         | Tipo   | Descripción                                                                                               |
+| ------------- | ------ | --------------------------------------------------------------------------------------------------------- |
+| `id`          | number | Identificador de la reserva. Se genera automáticamente.                                                   |
+| `clientName`  | string | Nombre del cliente. **Obligatorio.**                                                                      |
+| `clientEmail` | string | Email del cliente. **Obligatorio.**                                                                       |
+| `date`        | string | Fecha de la reserva. **Obligatorio.**                                                                     |
+| `time`        | string | Hora de la reserva. **Obligatorio.**                                                                      |
+| `status`      | string | Estado de la reserva. Si no se envía, se guarda como `"pending"`.                                         |
+| `services`    | array  | Servicios de la reserva. Siempre arranca vacío (`[]`) y se completa con el endpoint de agregar servicios. |
+
+### Cómo se guardan los servicios dentro de una reserva
+
+Cada elemento de `services` es `{ "service": idDelServicio, "quantity": cantidad }`.
+
+- **Solo se guarda el id del servicio**, no una copia. El nombre y el precio viven una única vez en `services.json`, así la reserva siempre refleja el dato actual del servicio.
+- **Si se agrega dos veces el mismo servicio**, no se duplica la entrada: se incrementa su `quantity`.
+
+El `id` y el `services` **no se envían en el body** del `POST`: si se envían, se ignoran.
+
+---
+
+## Endpoints de `services`
 
 | Método   | Ruta                 | Descripción                                                                  | Códigos de estado |
 | -------- | -------------------- | ---------------------------------------------------------------------------- | ----------------- |
@@ -318,16 +362,167 @@ DELETE /api/services/4
 
 ---
 
-## Códigos de estado utilizados
+## Endpoints de `bookings`
 
-| Código | Significado                                                                     |
-| ------ | ------------------------------------------------------------------------------- |
-| `200`  | La operación se realizó correctamente.                                          |
-| `201`  | El servicio se creó correctamente.                                              |
-| `400`  | Petición inválida: faltan campos, el body no es válido o un filtro es inválido. |
-| `404`  | No existe un servicio con el id indicado.                                       |
+| Método | Ruta                               | Descripción                                                                            | Códigos de estado |
+| ------ | ---------------------------------- | -------------------------------------------------------------------------------------- | ----------------- |
+| `POST` | `/api/bookings`                    | Crea una reserva con los datos del body. El `id` se genera y `services` arranca vacío. | `201`, `400`      |
+| `GET`  | `/api/bookings/:bid`               | Devuelve la reserva con ese id.                                                        | `200`, `404`      |
+| `POST` | `/api/bookings/:bid/services/:sid` | Agrega un servicio a una reserva existente. Si ya estaba, incrementa su `quantity`.    | `200`, `404`      |
+
+### `POST /api/bookings`
+
+Crea una reserva. Hay que enviar en el body `clientName`, `clientEmail`, `date` y `time`. El `status` es opcional (por defecto `"pending"`). La reserva se crea con `services` vacío.
+
+```
+POST /api/bookings
+Content-Type: application/json
+```
+
+```json
+{
+  "clientName": "Ana Pérez",
+  "clientEmail": "ana@mail.com",
+  "date": "2026-11-10",
+  "time": "15:30"
+}
+```
+
+`201`:
+
+```json
+{
+  "message": "reserva creada con exito",
+  "payload": {
+    "clientName": "Ana Pérez",
+    "clientEmail": "ana@mail.com",
+    "date": "2026-11-10",
+    "time": "15:30",
+    "services": [],
+    "status": "pending",
+    "id": 1
+  }
+}
+```
+
+`400` si faltan campos obligatorios:
+
+```json
+{
+  "message": "Faltan campos obligatorios"
+}
+```
+
+`400` si el body no es un objeto válido (por ejemplo, vacío):
+
+```json
+{
+  "message": "El body debe ser un objeto con los datos de la reserva"
+}
+```
+
+> Si el body trae un `id` o un `services`, se ignoran: el `id` se asigna automáticamente y `services` siempre arranca como `[]`.
+
+### `GET /api/bookings/:bid`
+
+Devuelve una reserva por su id.
+
+```
+GET /api/bookings/1
+```
+
+`200`:
+
+```json
+{
+  "message": "success",
+  "payload": {
+    "id": 1,
+    "clientName": "Ana Pérez",
+    "clientEmail": "ana@mail.com",
+    "date": "2026-11-10",
+    "time": "15:30",
+    "status": "pending",
+    "services": []
+  }
+}
+```
+
+`404` (la reserva no existe):
+
+```json
+{
+  "message": "reserva no encontrada"
+}
+```
+
+### `POST /api/bookings/:bid/services/:sid`
+
+Agrega el servicio `:sid` a la reserva `:bid`. No lleva body. Antes de agregar, se valida que **existan los dos**:
+
+- Si el servicio **no estaba** en la reserva, se agrega como `{ "service": id, "quantity": 1 }`.
+- Si el servicio **ya estaba**, no se duplica: se suma 1 a su `quantity`.
+
+```
+POST /api/bookings/1/services/2
+```
+
+`200` (primera vez que se agrega el servicio 2):
+
+```json
+{
+  "message": "Servicio agregado a la reserva con exito",
+  "payload": {
+    "id": 1,
+    "clientName": "Ana Pérez",
+    "clientEmail": "ana@mail.com",
+    "date": "2026-11-10",
+    "time": "15:30",
+    "status": "pending",
+    "services": [{ "service": 2, "quantity": 1 }]
+  }
+}
+```
+
+Si se repite el mismo pedido, la respuesta es `200` y la entrada queda con `"quantity": 2`, sin crear una segunda entrada.
+
+`404` si el servicio no existe:
+
+```json
+{
+  "message": "Servicio no encontrado"
+}
+```
+
+`404` si la reserva no existe:
+
+```json
+{
+  "message": "Reserva no encontrada"
+}
+```
 
 ---
+
+## Ejemplo de flujo completo
+
+1. Crear una reserva: `POST /api/bookings` → queda con `id: 1` y `services: []`.
+2. Agregar el servicio 2: `POST /api/bookings/1/services/2` → `services: [{ service: 2, quantity: 1 }]`.
+3. Agregar otra vez el servicio 2: `POST /api/bookings/1/services/2` → `services: [{ service: 2, quantity: 2 }]`.
+4. Agregar el servicio 1: `POST /api/bookings/1/services/1` → `services: [{ service: 2, quantity: 2 }, { service: 1, quantity: 1 }]`.
+5. Consultar la reserva: `GET /api/bookings/1` → devuelve la reserva con los dos servicios.
+
+---
+
+## Códigos de estado utilizados
+
+| Código | Significado                                                                                    |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| `200`  | La operación se realizó correctamente.                                                         |
+| `201`  | El recurso (servicio o reserva) se creó correctamente.                                         |
+| `400`  | Petición inválida: faltan campos, el body no es válido o un filtro es inválido.                |
+| `404`  | No existe el servicio o la reserva con el id indicado.                                         |
+| `500`  | Error inesperado del servidor (por ejemplo, un problema al leer o escribir los archivos JSON). |
 
 ## Autor
 

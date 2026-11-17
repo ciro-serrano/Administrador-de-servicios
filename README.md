@@ -24,27 +24,57 @@ La información se guarda en archivos JSON, así que **los datos no se pierden a
 ```
 src/
   config/
-    env.config.js          # Carga y valida las variables de entorno
+    env.config.js            # Carga y valida las variables de entorno
+  controllers/
+    services.controller.js   # Recibe la request de services y arma la response
+    bookings.controller.js   # Recibe la request de bookings y arma la response
   managers/
-    ServiceManager.js      # Lógica de los servicios (lectura, alta, edición, baja y filtros)
-    BookingManager.js      # Lógica de las reservas (alta, consulta y agregado de servicios)
+    ServiceManager.js        # Lógica de datos de los servicios (lectura, alta, edición, baja y filtros)
+    BookingManager.js        # Lógica de datos de las reservas (alta, consulta y agregado de servicios)
   routes/
-    services.router.js     # Endpoints del recurso services (express.Router)
-    bookings.router.js     # Endpoints del recurso bookings (express.Router)
+    services.router.js       # Define los endpoints de services (express.Router)
+    bookings.router.js       # Define los endpoints de bookings (express.Router)
   data/
-    services.json          # Persistencia de los servicios
-    bookings.json          # Persistencia de las reservas
-  app.js                   # Configura la app de Express (middlewares y rutas)
-  server.js                # Pone la app a escuchar en el puerto
+    services.json            # Persistencia de los servicios
+    bookings.json            # Persistencia de las reservas
+  app.js                     # Configura la app de Express (middlewares y rutas)
+  server.js                  # Pone la app a escuchar en el puerto
 package.json
 .env.example
 .gitignore
 README.md
 ```
 
-La lógica vive en los managers. Los routers solo reciben la petición, llaman al manager correspondiente y responden con el código de estado que corresponde. `BookingManager` usa a `ServiceManager` para comprobar que un servicio exista antes de agregarlo a una reserva.
+El código está organizado en tres capas: **routers**, **controllers** y **managers**. Cada una tiene una única responsabilidad (ver la sección _Arquitectura en capas_).
 
 ---
+
+## Arquitectura en capas
+
+Cada petición atraviesa tres capas, y cada una se ocupa de una sola cosa:
+
+```
+Request → Router → Controller → Manager → archivo JSON
+                                   ↓
+Response ← Controller ← Manager
+```
+
+| Capa           | Archivos                                           | Qué hace                                                                                                                          | Qué no hace                               |
+| -------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| **Router**     | `services.router.js`, `bookings.router.js`         | Define los endpoints y los conecta con su controller.                                                                             | No contiene lógica ni accede a los datos. |
+| **Controller** | `services.controller.js`, `bookings.controller.js` | Lee `req.params`, `req.query` y `req.body`, llama al manager y responde con `res.status().json()`, eligiendo el código de estado. | No lee ni escribe los archivos JSON.      |
+| **Manager**    | `ServiceManager.js`, `BookingManager.js`           | Maneja la lógica de datos y la persistencia en los archivos JSON.                                                                 | No usa `req` ni `res`.                    |
+
+### Ejemplo: agregar un servicio a una reserva
+
+`POST /api/bookings/:bid/services/:sid`
+
+1. El **router** conecta la ruta con la función `addServiceToBooking` del controller.
+2. El **controller** lee `:bid` y `:sid`, y comprueba que existan la reserva (con `BookingManager`) y el servicio (con `ServiceManager`). Si falta alguno, responde `404`.
+3. El **manager** de reservas agrega el servicio a la reserva (o incrementa su `quantity`) y guarda el archivo.
+4. El **controller** responde `200` con la reserva actualizada.
+
+> Esta versión es una reorganización interna: los endpoints, las URLs y las respuestas son exactamente las mismas que antes.
 
 ## Instalación
 

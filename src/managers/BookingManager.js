@@ -1,11 +1,9 @@
-import ServiceManager from "./ServiceManager.js";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 
 class BookingManager {
   constructor() {
-    this.serviceManager = new ServiceManager();
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     this.bookingPath = path.join(__dirname, "../data/bookings.json");
@@ -68,32 +66,18 @@ class BookingManager {
   async addServiceToBooking(bid, sid) {
     //llamamos al array de bookings
     const bookings = await this.#readFile();
-    const bookingId = Number(bid);
     //obtenemos el indice [0] donde se encuentra la reserva que buscamos
-    const bookingIndex = bookings.findIndex((b) => b.id === bookingId);
-    //validamos que exista esa reserva
-    if (bookingIndex === -1) {
-      const error = new Error("Reserva no encontrada");
-      error.status = 404;
-      throw error;
-    }
-    //llamamos a un servicio por su id
-    const service = await this.serviceManager.getServiceById(sid);
-    //validamos que ese servicio exista
-    if (!service) {
-      const error = new Error("Servicio no encontrado");
-      error.status = 404;
-      throw error;
-    }
+    const bookingIndex = bookings.findIndex((b) => b.id === bid);
+
     //instanciamos la reserva que obtuvimos mediante su indice
     const booking = bookings[bookingIndex];
     //buscamos la primera entrada al array de services
-    const entry = booking.services.find((s) => s.service === service.id);
+    const entry = booking.services.find((s) => s.service === sid);
 
     if (entry) {
       entry.quantity += 1;
     } else {
-      booking.services.push({ service: service.id, quantity: 1 });
+      booking.services.push({ service: sid, quantity: 1 });
     }
 
     await this.#writeFile(bookings);

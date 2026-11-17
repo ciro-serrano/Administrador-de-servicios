@@ -1,7 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile } from "node:fs/promises";
-import { type } from "node:os";
 
 class ServiceManager {
   constructor() {
@@ -124,7 +123,5 @@ class ServiceManager {
   }
   async filterService() {}
 }
-
-const manager = new ServiceManager();
 
 export default ServiceManager;

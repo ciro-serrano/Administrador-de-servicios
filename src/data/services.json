@@ -25,14 +25,5 @@
     "price": 18000,
     "category": "Spa",
     "available": false
-  },
-  {
-    "name": "Masaje descontracturante",
-    "description": "Sesion de masaje focalizado en espalda, cuello y hombros.",
-    "duration": 60,
-    "price": 18000,
-    "category": "Spa",
-    "available": false,
-    "id": 5
   }
 ]

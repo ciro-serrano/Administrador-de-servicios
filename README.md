@@ -24,57 +24,89 @@ La información se guarda en archivos JSON, así que **los datos no se pierden a
 ```
 src/
   config/
-    env.config.js            # Carga y valida las variables de entorno
-  controllers/
-    services.controller.js   # Recibe la request de services y arma la response
-    bookings.controller.js   # Recibe la request de bookings y arma la response
-  managers/
-    ServiceManager.js        # Lógica de datos de los servicios (lectura, alta, edición, baja y filtros)
-    BookingManager.js        # Lógica de datos de las reservas (alta, consulta y agregado de servicios)
+    env.config.js              # Carga y valida las variables de entorno
   routes/
-    services.router.js       # Define los endpoints de services (express.Router)
-    bookings.router.js       # Define los endpoints de bookings (express.Router)
+    services.router.js         # Endpoints de services (express.Router)
+    bookings.router.js         # Endpoints de bookings (express.Router)
+  controllers/
+    services.controller.js     # Lee req, llama al service y responde con res
+    bookings.controller.js
+  services/
+    services.service.js        # Reglas de negocio de los servicios
+    bookings.service.js        # Reglas de negocio de las reservas
+  repositories/
+    services.repository.js     # Métodos de acceso a datos de servicios
+    bookings.repository.js
+  dao/
+    services.dao.js            # Lee y escribe services.json
+    bookings.dao.js            # Lee y escribe bookings.json
   data/
-    services.json            # Persistencia de los servicios
-    bookings.json            # Persistencia de las reservas
-  app.js                     # Configura la app de Express (middlewares y rutas)
-  server.js                  # Pone la app a escuchar en el puerto
+    services.json              # Persistencia de los servicios
+    bookings.json              # Persistencia de las reservas
+  app.js                       # Configura la app de Express (middlewares y rutas)
+  server.js                    # Pone la app a escuchar en el puerto
 package.json
 .env.example
 .gitignore
 README.md
 ```
 
-El código está organizado en tres capas: **routers**, **controllers** y **managers**. Cada una tiene una única responsabilidad (ver la sección _Arquitectura en capas_).
-
 ---
 
 ## Arquitectura en capas
 
-Cada petición atraviesa tres capas, y cada una se ocupa de una sola cosa:
+La aplicación está dividida en capas. Cada una tiene una única responsabilidad y solo se comunica con la que tiene inmediatamente debajo:
 
 ```
-Request → Router → Controller → Manager → archivo JSON
-                                   ↓
-Response ← Controller ← Manager
+Petición HTTP
+   ↓
+Router → Controller → Service → Repository → DAO → archivo JSON
 ```
 
-| Capa           | Archivos                                           | Qué hace                                                                                                                          | Qué no hace                               |
-| -------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| **Router**     | `services.router.js`, `bookings.router.js`         | Define los endpoints y los conecta con su controller.                                                                             | No contiene lógica ni accede a los datos. |
-| **Controller** | `services.controller.js`, `bookings.controller.js` | Lee `req.params`, `req.query` y `req.body`, llama al manager y responde con `res.status().json()`, eligiendo el código de estado. | No lee ni escribe los archivos JSON.      |
-| **Manager**    | `ServiceManager.js`, `BookingManager.js`           | Maneja la lógica de datos y la persistencia en los archivos JSON.                                                                 | No usa `req` ni `res`.                    |
+| Capa           | Qué hace                                                                                             | Qué NO hace                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Router**     | Define los endpoints y los asocia a un controller.                                                   | Ninguna lógica.                                  |
+| **Controller** | Lee `req`, llama al service y responde con `res` y el código de estado.                              | No accede a archivos ni tiene reglas de negocio. |
+| **Service**    | Aplica las reglas de negocio y las validaciones. Decide cuándo hay un error y con qué código.        | No usa `req`/`res` ni lee archivos.              |
+| **Repository** | Ofrece los métodos de acceso a datos (`getAll`, `getById`, `create`, `update`, `delete`) al service. | No tiene reglas de negocio.                      |
+| **DAO**        | Lee y escribe directamente el archivo JSON.                                                          | No tiene lógica de negocio.                      |
 
-### Ejemplo: agregar un servicio a una reserva
+### Qué hace cada service
 
-`POST /api/bookings/:bid/services/:sid`
+**`services.service.js`**
 
-1. El **router** conecta la ruta con la función `addServiceToBooking` del controller.
-2. El **controller** lee `:bid` y `:sid`, y comprueba que existan la reserva (con `BookingManager`) y el servicio (con `ServiceManager`). Si falta alguno, responde `404`.
-3. El **manager** de reservas agrega el servicio a la reserva (o incrementa su `quantity`) y guarda el archivo.
-4. El **controller** responde `200` con la reserva actualizada.
+- `getServices`: filtra por `category` y `available`, y valida que `available` sea `true` o `false`.
+- `getServiceById`, `updateService`, `deleteService`: lanzan un error 404 si el id no existe. En `updateService` se ignora el `id` que venga en el body, porque no se puede modificar.
+- `createService`: valida que el body sea un objeto y que estén los seis campos obligatorios.
 
-> Esta versión es una reorganización interna: los endpoints, las URLs y las respuestas son exactamente las mismas que antes.
+**`bookings.service.js`**
+
+- `createBooking`: valida el body y los campos obligatorios (`clientName`, `clientEmail`, `date`, `time`). Toda reserva nace con `status: "pending"` (salvo que se envíe otro) y con la lista de `services` vacía.
+- `getBookingById`: lanza un 404 si la reserva no existe.
+- `addServiceToBooking`: valida primero la reserva y después el servicio. Si el servicio ya estaba en la reserva, **incrementa su `quantity`**; si no, lo agrega con `quantity: 1`. Esa regla está en el service y no en el DAO.
+
+### Cómo viaja un error
+
+Los services lanzan errores con la propiedad `status` (por ejemplo `400` o `404`). El controller los atrapa con `try/catch` y responde con `error.status || 500`. Así, el service decide **qué** pasó y el controller decide **cómo** responderlo.
+
+### Ejemplo de recorrido
+
+`POST /api/bookings/1/services/2`:
+
+1. El **router** deriva la petición a `addServiceToBooking` del controller.
+2. El **controller** lee `bid` y `sid` de `req.params` y llama al service.
+3. El **service** busca la reserva y el servicio (404 si no existen) y actualiza `quantity` o agrega la entrada.
+4. El **repository** pide al DAO guardar el cambio.
+5. El **DAO** escribe `bookings.json`.
+6. El controller responde `200` con la reserva actualizada.
+
+### Por qué esta estructura
+
+- Cada archivo tiene una sola responsabilidad, así que es más fácil ubicar un error.
+- El service no sabe dónde se guardan los datos. Cuando la persistencia pase de JSON a una base de datos, solo hay que reemplazar el DAO (y, si hace falta, el repository), sin tocar las reglas de negocio ni los controllers.
+- Los endpoints, los mensajes y los códigos de estado son exactamente los mismos que antes de la refactorización.
+
+> El `id` de cada recurso lo genera el DAO (`max(id) + 1`), porque es un detalle de cómo se guardan los datos. Una base de datos como MongoDB genera sus propios ids, y así el service no se ve afectado por ese cambio.
 
 ## Instalación
 

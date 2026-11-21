@@ -11,17 +11,17 @@ class BookingsService {
       throw error;
     }
 
-    const { clientName, clientEmail, date, time, status } = data;
+    const { _id: _ignorado, status, ...datos } = data;
     const bookingStatus = status || "pending";
 
-    if (!clientName || !clientEmail || !date || !time) {
+    if (!datos.clientName || !datos.clientEmail || !datos.date || !datos.time) {
       const error = new Error("Faltan campos obligatorios");
       error.status = 400;
       throw error;
     }
 
     const newData = {
-      ...data,
+      ...datos,
       status: bookingStatus,
       services: [],
     };
@@ -56,10 +56,11 @@ class BookingsService {
       error.status = 404;
       throw error;
     }
-    const sid = Number(serviceId);
-
+    const sid = service._id;
     //buscamos una entrada
-    const entry = booking.services.find((s) => s.service === sid);
+    const entry = booking.services.find(
+      (s) => s.service.toString() === sid.toString(),
+    );
     if (entry) {
       entry.quantity += 1;
     } else {

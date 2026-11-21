@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 //creamos un array con variables que son obligatorias
-const REQUIRED_ENV_VARS = ["PORT", "NODE_ENV"];
+const REQUIRED_ENV_VARS = ["PORT", "NODE_ENV", "MONGO_URI"];
 
 //filtramos para quedarnos solo con las que no estan o estan vacias
 const faltantes = REQUIRED_ENV_VARS.filter((key) => {
@@ -24,6 +24,7 @@ if (faltantes.length > 0) {
 const envConfig = {
   port: Number(process.env.PORT),
   nodeEnv: process.env.NODE_ENV,
+  mongoUri: process.env.MONGO_URI,
 };
 
 export default envConfig;

@@ -64,12 +64,12 @@ class ServicesService {
       error.status = 400;
       throw error;
     }
-
-    return await serviceRepository.create(data);
+    const { _id: _ignorated, id: _ignorado, ...resto } = data;
+    return await serviceRepository.create(resto);
   }
   async updateService(id, data = {}) {
     //ignoramos el id del objeto data para no corromper la regla : "no se puede modificar el id"
-    const { id: _ignorado, ...resto } = data;
+    const { _id: _ignorated, id: _ignorado, ...resto } = data;
 
     const updated = await serviceRepository.update(id, resto);
     if (!updated) {

@@ -25,6 +25,11 @@ La información se guarda en archivos JSON, así que **los datos no se pierden a
 src/
   config/
     env.config.js              # Carga y valida las variables de entorno
+    db.config.js               # Conexión a MongoDB Atlas con Mongoose
+  models/
+    service.model.js           # Esquema de servicios
+    booking.model.js           # Esquema de reservas
+    message.model.js           # Esquema de mensajes
   routes/
     services.router.js         # Endpoints de services (express.Router)
     bookings.router.js         # Endpoints de bookings (express.Router)
@@ -38,11 +43,8 @@ src/
     services.repository.js     # Métodos de acceso a datos de servicios
     bookings.repository.js
   dao/
-    services.dao.js            # Lee y escribe services.json
-    bookings.dao.js            # Lee y escribe bookings.json
-  data/
-    services.json              # Persistencia de los servicios
-    bookings.json              # Persistencia de las reservas
+    services.dao.js            # Accede a la colección services (Mongoose)
+    bookings.dao.js            # Accede a la colección bookings (Mongoose)
   app.js                       # Configura la app de Express (middlewares y rutas)
   server.js                    # Pone la app a escuchar en el puerto
 package.json
@@ -60,7 +62,7 @@ La aplicación está dividida en capas. Cada una tiene una única responsabilida
 ```
 Petición HTTP
    ↓
-Router → Controller → Service → Repository → DAO → archivo JSON
+Router → Controller → Service → Repository → DAO → MongoDB Atlas
 ```
 
 | Capa           | Qué hace                                                                                             | Qué NO hace                                      |
@@ -69,7 +71,7 @@ Router → Controller → Service → Repository → DAO → archivo JSON
 | **Controller** | Lee `req`, llama al service y responde con `res` y el código de estado.                              | No accede a archivos ni tiene reglas de negocio. |
 | **Service**    | Aplica las reglas de negocio y las validaciones. Decide cuándo hay un error y con qué código.        | No usa `req`/`res` ni lee archivos.              |
 | **Repository** | Ofrece los métodos de acceso a datos (`getAll`, `getById`, `create`, `update`, `delete`) al service. | No tiene reglas de negocio.                      |
-| **DAO**        | Lee y escribe directamente el archivo JSON.                                                          | No tiene lógica de negocio.                      |
+| **DAO**        | Consulta y guarda en MongoDB mediante los modelos de Mongoose.                                       | No tiene lógica de negocio.                      |
 
 ### Qué hace cada service
 
@@ -103,10 +105,16 @@ Los services lanzan errores con la propiedad `status` (por ejemplo `400` o `404`
 ### Por qué esta estructura
 
 - Cada archivo tiene una sola responsabilidad, así que es más fácil ubicar un error.
-- El service no sabe dónde se guardan los datos. Cuando la persistencia pase de JSON a una base de datos, solo hay que reemplazar el DAO (y, si hace falta, el repository), sin tocar las reglas de negocio ni los controllers.
+- La migración de JSON a MongoDB se resolvió reemplazando los DAOs y agregando los modelos. Los controllers y los repositories no cambiaron, y en los services solo se ajustó el manejo de ids
 - Los endpoints, los mensajes y los códigos de estado son exactamente los mismos que antes de la refactorización.
 
-> El `id` de cada recurso lo genera el DAO (`max(id) + 1`), porque es un detalle de cómo se guardan los datos. Una base de datos como MongoDB genera sus propios ids, y así el service no se ve afectado por ese cambio.
+## Cambios por la migración a MongoDB
+
+Los endpoints, los códigos de estado y los mensajes son los mismos. Lo único que cambia es la forma del identificador:
+
+- Los recursos ya no tienen un `id` numérico (`1`, `2`...) sino un **`_id`** generado por MongoDB, por ejemplo `"6b01ece5a33cf0a7f17bd5fd"`. Ese valor es el que se usa en `:sid` y `:bid`.
+- Un id con formato inválido (por ejemplo `/api/services/abc`) responde `404`, igual que un id que no existe.
+- Si el body de un `POST` o `PUT` incluye un `_id` (o `id`), se ignora.
 
 ## Instalación
 
@@ -121,16 +129,39 @@ cp .env.example .env
 
 ## Variables de entorno
 
-| Nombre de variable | Para qué sirve                                                                                       | Ejemplo       |
-| ------------------ | ---------------------------------------------------------------------------------------------------- | ------------- |
-| `PORT`             | Indica en qué puerto escucha el servidor                                                             | `8080`        |
-| `NODE_ENV`         | Indica en qué etapa se encuentra el programa: `development` (desarrollo) o `production` (producción) | `development` |
+| Nombre de variable | Para qué sirve                                                                                       | Ejemplo                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `PORT`             | Indica en qué puerto escucha el servidor                                                             | `8080`                                                             |
+| `NODE_ENV`         | Indica en qué etapa se encuentra el programa: `development` (desarrollo) o `production` (producción) | `development`                                                      |
+| `MONGO_URI`        | Cadena de conexión a MongoDB Atlas                                                                   | `mongodb+srv://usuario:password@cluster0.xxxxx.mongodb.net/turnos` |
 
-**Importante:** si falta alguna de las dos variables al arrancar, el programa se corta automáticamente y muestra un mensaje de error indicando cuál falta. No queda ningún prompt esperando que la completes.
+**Importante:** si falta alguna de las tres variables al arrancar, el programa se corta automáticamente y muestra un mensaje de error indicando cuál falta. No queda ningún prompt esperando que la completes.
 
 El archivo `.env` no se sube al repositorio. Usá `.env.example` como plantilla.
 
 ---
+
+## Base de datos
+
+La persistencia usa **MongoDB Atlas** a través de **Mongoose**. Para correr el proyecto hace falta:
+
+1. Un cluster en MongoDB Atlas con un usuario de base de datos.
+2. Tener habilitada tu IP en _Network Access_.
+3. Copiar la cadena de conexión en la variable `MONGO_URI` del `.env`.
+
+Las colecciones (`services`, `bookings` y `messages`) se crean automáticamente la primera vez que se guarda un documento.
+
+### Modelos
+
+| Modelo    | Campos                                                                     |
+| --------- | -------------------------------------------------------------------------- |
+| `Service` | `name`, `description`, `duration`, `price`, `category`, `available`        |
+| `Booking` | `clientName`, `clientEmail`, `date`, `time`, `status`, `services`          |
+| `Message` | `booking`, `content`, `sender` (`client` o `staff`), más fecha de creación |
+
+En `Booking`, cada elemento de `services` guarda `{ service, quantity }`, donde `service` es el `ObjectId` de un documento de `Service` (referencia, no una copia).
+
+El modelo `Message` está definido, pero todavía no tiene endpoints.
 
 ## Ejecución
 
@@ -152,7 +183,7 @@ Las bases de los endpoints son `/api/services` y `/api/bookings`.
 
 ```json
 {
-  "id": 1,
+  "_id": "6b01ece5a33cf0a7f17bd5fd",
   "name": "Corte de cabello",
   "description": "Corte clásico con lavado y peinado incluido.",
   "duration": 30,
@@ -180,7 +211,7 @@ El `id` **no se envía en el body** del `POST` y **no se puede modificar** con e
 
 ```json
 {
-  "id": 1,
+  "_id": "6b01ece5a33cf0a7f17bd5fd",
   "clientName": "Ana Pérez",
   "clientEmail": "ana@mail.com",
   "date": "2026-11-10",
@@ -195,7 +226,7 @@ El `id` **no se envía en el body** del `POST` y **no se puede modificar** con e
 
 | Campo         | Tipo   | Descripción                                                                                               |
 | ------------- | ------ | --------------------------------------------------------------------------------------------------------- |
-| `id`          | number | Identificador de la reserva. Se genera automáticamente.                                                   |
+| `id`          | number | Identificador de la reserva. Identificador generado por MongoDB.                                          |
 | `clientName`  | string | Nombre del cliente. **Obligatorio.**                                                                      |
 | `clientEmail` | string | Email del cliente. **Obligatorio.**                                                                       |
 | `date`        | string | Fecha de la reserva. **Obligatorio.**                                                                     |
